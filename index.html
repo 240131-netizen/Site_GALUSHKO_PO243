@@ -2,17 +2,31 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>BaaS</title>
+    <title>BaaS - Fixed</title>
     <style>
         body { font-family: 'Inter', sans-serif; background: #f4f7f6; display: flex; flex-direction: column; align-items: center; padding: 20px; }
         .container { width: 100%; max-width: 500px; background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); }
         input { width: 100%; padding: 12px; margin: 8px 0; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; }
         button#mainBtn { background: #007bff; color: white; border: none; padding: 12px; border-radius: 6px; width: 100%; font-weight: 600; cursor: pointer; transition: 0.3s; }
-        .post { background: #fff; border: 1px solid #eaeaea; padding: 15px; margin-top: 15px; border-radius: 8px; width: 100%; max-width: 500px; position: relative; }
+        
+        .post { background: #fff; border: 1px solid #eaeaea; padding: 15px; margin-top: 15px; border-radius: 8px; width: 100%; max-width: 500px; position: relative; padding-bottom: 45px; }
         .like-btn { cursor: pointer; border: none; background: #f8f9fa; padding: 5px 12px; border-radius: 20px; font-size: 14px; transition: 0.2s; }
         .like-btn:hover { background: #e2e6ea; }
         .time { font-size: 11px; color: #999; float: right; }
-        .delete-btn:hover { color: #cc0000 !important; transform: scale(1.2); transition: 0.2s; }
+
+        /* Новая кнопка удаления */
+        .delete-text-btn { 
+            position: absolute; bottom: 12px; right: 15px; 
+            background: none; border: none; color: #ff4d4d; 
+            cursor: pointer; font-size: 13px; font-weight: 500; 
+        }
+        .delete-text-btn:hover { color: #cc0000; text-decoration: underline; }
+
+        /* Кнопка внизу списка */
+        #loadMoreBtn { 
+            margin: 20px 0; padding: 10px 20px; border: 1px solid #007bff; 
+            background: white; color: #007bff; border-radius: 6px; cursor: pointer; 
+        }
     </style>
 </head>
 <body>
@@ -25,142 +39,98 @@
     </div>
 
     <div id="feed" style="width: 100%; max-width: 500px;"></div>
+    <button id="loadMoreBtn">Просмотреть еще</button>
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js";
         import { 
             getFirestore, collection, addDoc, query, orderBy, onSnapshot, 
-            serverTimestamp, updateDoc, doc, increment , deleteDoc , limit , startAfter , getDocs
+            serverTimestamp, updateDoc, doc, increment, deleteDoc, limit, startAfter, getDocs 
         } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js";
 
-        // КОНФИГУРАЦИЯ
         const firebaseConfig = {
-  apiKey: "AIzaSyCMU10sdX-NMzO1at3hgLclApVAgwqDu4E",
-  authDomain: "galushkodenis-7833b.firebaseapp.com",
-  projectId: "galushkodenis-7833b",
-  storageBucket: "galushkodenis-7833b.firebasestorage.app",
-  messagingSenderId: "176104150786",
-  appId: "1:176104150786:web:2d8044114a4fd4a9c0141b"
-};
+            apiKey: "AIzaSyCMU10sdX-NMzO1at3hgLclApVAgwqDu4E",
+            authDomain: "galushkodenis-7833b.firebaseapp.com",
+            projectId: "galushkodenis-7833b",
+            storageBucket: "galushkodenis-7833b.firebasestorage.app",
+            messagingSenderId: "176104150786",
+            appId: "1:176104150786:web:2d8044114a4fd4a9c0141b"
+        };
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
 
-        // МЕТОД: АТОМАРНОЕ ОБНОВЛЕНИЕ (LIKES)
-        window.processLike = async (id) => {
-            const docRef = doc(db, "requests", id);
-            try {
-                await updateDoc(docRef, { likes: increment(1) });
-            } catch (e) {
-                console.error("Validation Error:", e.message);
-            }
+        let lastVisible = null;
+
+        // МЕТОД: УДАЛЕНИЕ (Теперь текстовая кнопка)
+        window.deletePost = async (id) => {
+            if (confirm("Удалить?")) await deleteDoc(doc(db, "requests", id));
         };
 
-        // МЕТОД: ЗАПИСЬ С ВАЛИДАЦИЕЙ
+        // МЕТОД: ЛАЙК
+        window.processLike = async (id) => {
+            await updateDoc(doc(db, "requests", id), { likes: increment(1) });
+        };
+
+        // МЕТОД: ЗАПИСЬ
         document.getElementById('mainBtn').onclick = async () => {
             const btn = document.getElementById('mainBtn');
             btn.disabled = true;
-            try {
-                await addDoc(collection(db, "requests"), {
-                    name: document.getElementById('name').value,
-                    email: document.getElementById('email').value,
-                    likes: 0,
-                    timestamp: serverTimestamp()
-                });
-                document.getElementById('email').value = "";
-            } catch (e) {
-                alert("Ошибка безопасности: Данные отклонены сервером.");
-            }
+            await addDoc(collection(db, "requests"), {
+                name: document.getElementById('name').value,
+                email: document.getElementById('email').value,
+                likes: 0,
+                timestamp: serverTimestamp()
+            });
+            document.getElementById('email').value = "";
             btn.disabled = false;
         };
-        // МЕТОД УДАЛЕНИЕ ПОСТА
-        window.deletePost = async (id) => {
-    // Подтверждение действия, чтобы избежать случайных нажатий
-    if (!confirm("Вы действительно хотите удалить эту запись?")) return;
 
-    // Ссылка на конкретный документ в коллекции "requests" по его ID
-    const docRef = doc(db, "requests", id);
-
-    try {
-        await deleteDoc(docRef);
-        
-        // Визуально удаляем элемент из верстки, чтобы не ждать обновления списка
-        const element = document.getElementById(`post-${id}`);
-        if (element) element.remove();
-        
-        console.log("Документ успешно удален");
-    } catch (e) {
-        console.error("Ошибка при удалении:", e);
-        alert("Ошибка: недостаточно прав или сбой сети.");
-    }
-};
-
-let lastVisible = null; // Хранитель последнего загруженного документа
-const PAGE_SIZE = 5;    // Сколько записей грузим за раз
-
-// ФУНКЦИЯ ЗАГРУЗКИ ПОРЦИИ ДАННЫХ
-window.loadMore = async () => {
-    const btnMore = document.getElementById('loadMoreBtn');
-    btnMore.disabled = true;
-    btnMore.innerText = "Загрузка...";
-
-    let q;
-    if (!lastVisible) {
-        // Первый запрос
-        q = query(collection(db, "requests"), orderBy("timestamp", "desc"), limit(PAGE_SIZE));
-    } else {
-        // Последующие запросы от последней точки
-        q = query(collection(db, "requests"), orderBy("timestamp", "desc"), startAfter(lastVisible), limit(PAGE_SIZE));
-    }
-
-    const documentSnapshots = await getDocs(q);
-    
-    // Сохраняем последний элемент для следующего шага
-    lastVisible = documentSnapshots.docs[documentSnapshots.docs.length - 1];
-
-    const feed = document.getElementById('feed');
-    documentSnapshots.forEach((doc) => {
-        const data = doc.data();
-        const postHtml = `
-            <div class="post" id="post-${doc.id}">
-                <span class="time">${data.timestamp?.toDate().toLocaleTimeString() || '...'}</span>
-                <b>${data.name}</b>
-                <p style="margin: 5px 0;">${data.email}</p>
-                <button class="like-btn" onclick="processLike('${doc.id}')">👍 <span id="likes-${doc.id}">${data.likes || 0}</span></button>
-            </div>
-        `;
-        feed.insertAdjacentHTML('beforeend', postHtml);
-    });
-
-    btnMore.disabled = false;
-    btnMore.innerText = "Просмотреть еще";
-
-    // Если записей больше нет — скрываем кнопку
-    if (documentSnapshots.docs.length < PAGE_SIZE) {
-        btnMore.style.display = 'none';
-    }
-};
-// Запускаем первую загрузку при старте
-window.loadMore();
-
-        // МЕТОД: REAL-TIME СИНХРОНИЗАЦИЯ
-        const q = query(collection(db, "requests"), orderBy("timestamp", "desc"));
-        onSnapshot(q, (snapshot) => {
+        // МЕТОД: REAL-TIME (Следит за первыми 10 записями)
+        const qRealtime = query(collection(db, "requests"), orderBy("timestamp", "desc"), limit(10));
+        onSnapshot(qRealtime, (snapshot) => {
             const feed = document.getElementById('feed');
-            feed.innerHTML = "";
+            // Очищаем только если еще не грузили "еще"
+            if (!lastVisible) feed.innerHTML = ""; 
+            
             snapshot.forEach((doc) => {
+                // Если пост уже есть (из загрузки "еще"), не дублируем
+                if (document.getElementById(`post-${doc.id}`)) return;
+
                 const data = doc.data();
-                feed.innerHTML += `
-                    <div class="post">
-                        <button class="delete-btn" onclick="deletePost('${doc.id}')"  style="position: absolute; top: 10px; right: 10px; background: none; border: none; color: #ff4d4d; cursor: pointer; font-size: 18px;">&times;</button>
-                        <button id="loadMoreBtn" onclick="loadMore()" style="margin-top: 20px; padding: 10px; cursor: pointer;">Просмотреть еще</button>
+                const html = `
+                    <div class="post" id="post-${doc.id}">
                         <span class="time">${data.timestamp?.toDate().toLocaleTimeString() || '...'}</span>
                         <b>${data.name}</b>
                         <p style="margin: 5px 0;">${data.email}</p>
                         <button class="like-btn" onclick="processLike('${doc.id}')">👍 ${data.likes || 0}</button>
-                    </div>
-                `;
+                        <button class="delete-text-btn" onclick="deletePost('${doc.id}')">Удалить</button>
+                    </div>`;
+                feed.insertAdjacentHTML('afterbegin', html);
             });
+            // Ставим маркер для кнопки "еще"
+            if (!lastVisible) lastVisible = snapshot.docs[snapshot.docs.length - 1];
         });
+
+        // МЕТОД: ПРОСМОТРЕТЬ ЕЩЕ (Статика)
+        document.getElementById('loadMoreBtn').onclick = async () => {
+            const q = query(collection(db, "requests"), orderBy("timestamp", "desc"), startAfter(lastVisible), limit(5));
+            const snapshot = await getDocs(q);
+            if (snapshot.empty) return document.getElementById('loadMoreBtn').style.display = 'none';
+            
+            lastVisible = snapshot.docs[snapshot.docs.length - 1];
+            snapshot.forEach(doc => {
+                const data = doc.data();
+                const html = `
+                    <div class="post" id="post-${doc.id}">
+                        <span class="time">${data.timestamp?.toDate().toLocaleTimeString() || '...'}</span>
+                        <b>${data.name}</b>
+                        <p style="margin: 5px 0;">${data.email}</p>
+                        <button class="like-btn" onclick="processLike('${doc.id}')">👍 ${data.likes || 0}</button>
+                        <button class="delete-text-btn" onclick="deletePost('${doc.id}')">Удалить</button>
+                    </div>`;
+                document.getElementById('feed').insertAdjacentHTML('beforeend', html);
+            });
+        };
     </script>
 </body>
 </html>
