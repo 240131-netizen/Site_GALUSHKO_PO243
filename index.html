@@ -2,27 +2,23 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>BaaS Firebase Pro</title>
+    <title>BaaS Firebase - Fixed Rules</title>
     <style>
         body { font-family: 'Inter', sans-serif; background: #f4f7f6; display: flex; flex-direction: column; align-items: center; padding: 20px; }
         .container { width: 100%; max-width: 500px; background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); }
         input { width: 100%; padding: 12px; margin: 8px 0; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; }
         button#mainBtn { background: #007bff; color: white; border: none; padding: 12px; border-radius: 6px; width: 100%; font-weight: 600; cursor: pointer; }
-        
         .post { background: #fff; border: 1px solid #eaeaea; padding: 15px; margin-top: 15px; border-radius: 8px; width: 100%; max-width: 500px; position: relative; padding-bottom: 50px; }
         .time { font-size: 11px; color: #999; float: right; }
-        .edit-label { font-size: 10px; color: #007bff; font-style: italic; display: block; margin-top: 4px; }
-
+        .edit-info { font-size: 10px; color: #007bff; display: block; margin-bottom: 5px; font-style: italic; }
         .controls { position: absolute; bottom: 12px; right: 15px; display: flex; gap: 10px; }
-        .btn-action { background: none; border: none; cursor: pointer; font-size: 12px; font-weight: 500; }
-        .btn-edit { color: #007bff; }
-        .btn-delete { color: #ff4d4d; }
+        .btn-act { background: none; border: none; cursor: pointer; font-size: 12px; }
     </style>
 </head>
 <body>
 
     <div class="container">
-        <h3>Управление записями</h3>
+        <h3>Панель управления</h3>
         <input type="text" id="name" placeholder="Имя профиля">
         <input type="email" id="email" placeholder="Рабочий Email">
         <button id="mainBtn">Опубликовать</button>
@@ -45,100 +41,61 @@
             messagingSenderId: "176104150786",
             appId: "1:176104150786:web:2d8044114a4fd4a9c0141b"
         };
-
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
 
-        // ФУНКЦИЯ 1: УДАЛЕНИЕ
+        // ФУНКЦИЯ: УДАЛЕНИЕ
         window.deletePost = async (id) => {
-            if (!confirm("Удалить запись навсегда?")) return;
-            try {
-                await deleteDoc(doc(db, "requests", id));
-                console.log("Удалено из БД");
-            } catch (e) {
-                alert("Ошибка БД: Возможно, у вас не настроены правила доступа (Rules)");
-                console.error(e);
-            }
-        };
-
-        // ФУНКЦИЯ 2: РЕДАКТИРОВАНИЕ + Метка "Изменено"
-        window.editPost = async (id, currentName) => {
-            const newName = prompt("Новое имя:", currentName);
-            if (newName && newName !== currentName) {
+            if (confirm("Удалить из базы навсегда?")) {
                 try {
-                    const docRef = doc(db, "requests", id);
-                    await updateDoc(docRef, { 
-                        name: newName,
-                        lastUpdate: "Изменен на: " + newName, // Пишем прямо в БД
-                        editedAt: serverTimestamp()         // Сохраняем время правки
-                    });
-                } catch (e) {
-                    alert("Ошибка при изменении");
-                }
+                    await deleteDoc(doc(db, "requests", id));
+                } catch (e) { alert("Ошибка: Проверьте Rules в Firebase!"); }
             }
         };
 
-        // ФУНКЦИЯ 3: ЛАЙК
-        window.processLike = async (id) => {
-            await updateDoc(doc(db, "requests", id), { likes: increment(1) });
+        // ФУНКЦИЯ: РЕДАКТИРОВАНИЕ
+        window.editPost = async (id, oldName) => {
+            const newName = prompt("Новое имя:", oldName);
+            if (newName && newName !== oldName) {
+                await updateDoc(doc(db, "requests", id), { 
+                    name: newName,
+                    lastUpdate: `Изменен на "${newName}"`,
+                    editedAt: serverTimestamp()
+                });
+            }
         };
 
-        // СОЗДАНИЕ
+        // ФУНКЦИЯ: ЛАЙК
+        window.processLike = (id) => updateDoc(doc(db, "requests", id), { likes: increment(1) });
+
+        // ДОБАВЛЕНИЕ
         document.getElementById('mainBtn').onclick = async () => {
-            const name = document.getElementById('name').value;
-            const email = document.getElementById('email').value;
-            if (name && email) {
-                await addDoc(collection(db, "requests"), {
-                    name, email, likes: 0, timestamp: serverTimestamp()
-                });
+            const n = document.getElementById('name').value;
+            const e = document.getElementById('email').value;
+            if(n && e) {
+                await addDoc(collection(db, "requests"), { name: n, email: e, likes: 0, timestamp: serverTimestamp() });
                 document.getElementById('email').value = "";
             }
         };
 
-        // СИНХРОНИЗАЦИЯ (через docChanges для надежности)
-        const q = query(collection(db, "requests"), orderBy("timestamp", "desc"));
-        onSnapshot(q, (snapshot) => {
+        // ОТОБРАЖЕНИЕ
+        onSnapshot(query(collection(db, "requests"), orderBy("timestamp", "desc")), (snap) => {
             const feed = document.getElementById('feed');
-            
-            snapshot.docChanges().forEach((change) => {
-                const id = change.doc.id;
-                const data = change.doc.data();
-
-                if (change.type === "added") {
-                    const postHtml = `
-                        <div class="post" id="post-${id}">
-                            <span class="time">${data.timestamp?.toDate().toLocaleTimeString() || '...'}</span>
-                            <b>${data.name}</b>
-                            ${data.lastUpdate ? `<span class="edit-label">${data.lastUpdate}</span>` : ''}
-                            <p style="margin: 5px 0;">${data.email}</p>
-                            <button class="like-btn" onclick="processLike('${id}')">👍 <span id="likes-${id}">${data.likes || 0}</span></button>
-                            
-                            <div class="controls">
-                                <button class="btn-action btn-edit" onclick="editPost('${id}', '${data.name}')">Изменить</button>
-                                <button class="btn-action btn-delete" onclick="deletePost('${id}')">Удалить</button>
-                            </div>
-                        </div>`;
-                    feed.insertAdjacentHTML('afterbegin', postHtml);
-                }
-
-                if (change.type === "modified") {
-                    const postEl = document.getElementById(`post-${id}`);
-                    if (postEl) {
-                        // Обновляем имя и метку изменения внутри поста
-                        postEl.querySelector('b').innerText = data.name;
-                        const oldLabel = postEl.querySelector('.edit-label');
-                        if (data.lastUpdate) {
-                            if (oldLabel) oldLabel.innerText = data.lastUpdate;
-                            else postEl.querySelector('b').insertAdjacentHTML('afterend', `<span class="edit-label">${data.lastUpdate}</span>`);
-                        }
-                        document.getElementById(`likes-${id}`).innerText = data.likes || 0;
-                    }
-                }
-
-                if (change.type === "removed") {
-                    const el = document.getElementById(`post-${id}`);
-                    if (el) el.remove();
-                }
+            feed.innerHTML = "";
+            snap.forEach((doc) => {
+                const d = doc.data();
+                feed.innerHTML += `
+                    <div class="post">
+                        <span class="time">${d.timestamp?.toDate().toLocaleTimeString() || '...'}</span>
+                        <b>${d.name}</b>
+                        ${d.lastUpdate ? `<span class="edit-info">${d.lastUpdate}</span>` : ''}
+                        <p>${d.email}</p>
+                        <button class="btn-act" onclick="processLike('${doc.id}')">👍 ${d.likes || 0}</button>
+                        <div class="controls">
+                            <button class="btn-act" style="color: #007bff" onclick="editPost('${doc.id}', '${d.name}')">Изменить</button>
+                            <button class="btn-act" style="color: #ff4d4d" onclick="deletePost('${doc.id}')">Удалить</button>
+                        </div>
+                    </div>`;
             });
         });
     </script>
