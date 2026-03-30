@@ -93,31 +93,32 @@
         // --- 5. REAL-TIME ЛЕНТА ---
         const q = query(collection(db, "requests"), orderBy("timestamp", "desc"));
         onSnapshot(q, (snapshot) => {
-            const feed = document.getElementById('feed');
-            feed.innerHTML = ""; // Полная очистка для корректного порядка
-            
-            snapshot.forEach((doc) => {
-                const data = doc.data();
-                const id = doc.id;
-                const time = data.timestamp?.toDate().toLocaleTimeString() || "...";
+    const feed = document.getElementById('feed');
+    feed.innerHTML = ""; // Очищаем старое, чтобы не дублировать
+    
+    snapshot.forEach((doc) => {
+        const d = doc.data();
+        const id = doc.id;
+        const time = d.timestamp?.toDate().toLocaleTimeString() || '...';
 
-                feed.innerHTML += `
-                    <div class="post" id="post-${id}">
-                        <span class="time">${time}</span>
-                        <b>${data.name}</b>
-                        ${data.lastUpdate ? `<span class="edit-info">${data.lastUpdate}</span>` : ''}
-                        <p style="margin: 8px 0;">${data.email}</p>
-                        
-                        <button class="like-btn" onclick="processLike('${id}')">👍 ${data.likes || 0}</button>
-                        
-                        <div class="post-actions">
-                            <button class="action-link link-edit" onclick="editPost('${id}', '${data.name}')">Изменить</button>
-                            <button class="action-link link-delete" onclick="deletePost('${id}')">Удалить</button>
-                        </div>
-                    </div>
-                `;
-            });
-        });
+        // Формируем HTML карточки
+        feed.innerHTML += `
+            <div class="post" id="post-${id}" style="position: relative; padding-bottom: 50px; margin-bottom: 15px; background: white; border-radius: 8px; border: 1px solid #eaeaea; padding: 15px;">
+                <span class="time" style="font-size: 11px; color: #999; float: right;">${time}</span>
+                <b>${d.name}</b>
+                ${d.lastUpdate ? `<br><small style="color: #007bff; font-style: italic;">${d.lastUpdate}</small>` : ''}
+                <p style="margin: 8px 0; color: #555;">${d.email}</p>
+                
+                <button class="like-btn" onclick="processLike('${id}')">👍 ${d.likes || 0}</button>
+                
+                <div style="position: absolute; bottom: 12px; right: 15px; display: flex; gap: 15px;">
+                    <button onclick="editPost('${id}', '${d.name}')" style="background: none; border: none; color: #007bff; cursor: pointer; font-size: 13px; font-weight: 500; padding: 0;">Изменить</button>
+                    <button onclick="deletePost('${id}')" style="background: none; border: none; color: #ff4d4d; cursor: pointer; font-size: 13px; font-weight: 500; padding: 0;">Удалить</button>
+                </div>
+            </div>
+        `;
+    });
+});
     </script>
 </body>
 </html>
