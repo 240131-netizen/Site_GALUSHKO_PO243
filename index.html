@@ -12,6 +12,7 @@
         .like-btn { cursor: pointer; border: none; background: #f8f9fa; padding: 5px 12px; border-radius: 20px; font-size: 14px; transition: 0.2s; }
         .like-btn:hover { background: #e2e6ea; }
         .time { font-size: 11px; color: #999; float: right; }
+        .delete-btn:hover { color: #cc0000 !important; transform: scale(1.2); transition: 0.2s; }
     </style>
 </head>
 <body>
@@ -29,7 +30,7 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js";
         import { 
             getFirestore, collection, addDoc, query, orderBy, onSnapshot, 
-            serverTimestamp, updateDoc, doc, increment 
+            serverTimestamp, updateDoc, doc, increment , deleteDoc , limit , startAfter , getDocs
         } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js";
 
         // КОНФИГУРАЦИЯ
@@ -71,6 +72,75 @@
             }
             btn.disabled = false;
         };
+        // МЕТОД УДАЛЕНИЕ ПОСТА
+        window.deletePost = async (id) => {
+    // Подтверждение действия, чтобы избежать случайных нажатий
+    if (!confirm("Вы действительно хотите удалить эту запись?")) return;
+
+    // Ссылка на конкретный документ в коллекции "requests" по его ID
+    const docRef = doc(db, "requests", id);
+
+    try {
+        await deleteDoc(docRef);
+        
+        // Визуально удаляем элемент из верстки, чтобы не ждать обновления списка
+        const element = document.getElementById(`post-${id}`);
+        if (element) element.remove();
+        
+        console.log("Документ успешно удален");
+    } catch (e) {
+        console.error("Ошибка при удалении:", e);
+        alert("Ошибка: недостаточно прав или сбой сети.");
+    }
+};
+
+let lastVisible = null; // Хранитель последнего загруженного документа
+const PAGE_SIZE = 5;    // Сколько записей грузим за раз
+
+// ФУНКЦИЯ ЗАГРУЗКИ ПОРЦИИ ДАННЫХ
+window.loadMore = async () => {
+    const btnMore = document.getElementById('loadMoreBtn');
+    btnMore.disabled = true;
+    btnMore.innerText = "Загрузка...";
+
+    let q;
+    if (!lastVisible) {
+        // Первый запрос
+        q = query(collection(db, "requests"), orderBy("timestamp", "desc"), limit(PAGE_SIZE));
+    } else {
+        // Последующие запросы от последней точки
+        q = query(collection(db, "requests"), orderBy("timestamp", "desc"), startAfter(lastVisible), limit(PAGE_SIZE));
+    }
+
+    const documentSnapshots = await getDocs(q);
+    
+    // Сохраняем последний элемент для следующего шага
+    lastVisible = documentSnapshots.docs[documentSnapshots.docs.length - 1];
+
+    const feed = document.getElementById('feed');
+    documentSnapshots.forEach((doc) => {
+        const data = doc.data();
+        const postHtml = `
+            <div class="post" id="post-${doc.id}">
+                <span class="time">${data.timestamp?.toDate().toLocaleTimeString() || '...'}</span>
+                <b>${data.name}</b>
+                <p style="margin: 5px 0;">${data.email}</p>
+                <button class="like-btn" onclick="processLike('${doc.id}')">👍 <span id="likes-${doc.id}">${data.likes || 0}</span></button>
+            </div>
+        `;
+        feed.insertAdjacentHTML('beforeend', postHtml);
+    });
+
+    btnMore.disabled = false;
+    btnMore.innerText = "Просмотреть еще";
+
+    // Если записей больше нет — скрываем кнопку
+    if (documentSnapshots.docs.length < PAGE_SIZE) {
+        btnMore.style.display = 'none';
+    }
+};
+// Запускаем первую загрузку при старте
+window.loadMore();
 
         // МЕТОД: REAL-TIME СИНХРОНИЗАЦИЯ
         const q = query(collection(db, "requests"), orderBy("timestamp", "desc"));
@@ -81,6 +151,8 @@
                 const data = doc.data();
                 feed.innerHTML += `
                     <div class="post">
+                        <button class="delete-btn" onclick="deletePost('${doc.id}')"  style="position: absolute; top: 10px; right: 10px; background: none; border: none; color: #ff4d4d; cursor: pointer; font-size: 18px;">&times;</button>
+                        <button id="loadMoreBtn" onclick="loadMore()" style="margin-top: 20px; padding: 10px; cursor: pointer;">Просмотреть еще</button>
                         <span class="time">${data.timestamp?.toDate().toLocaleTimeString() || '...'}</span>
                         <b>${data.name}</b>
                         <p style="margin: 5px 0;">${data.email}</p>
