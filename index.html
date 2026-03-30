@@ -2,26 +2,32 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>BaaS Firebase - Fixed Rules</title>
+    <title>BaaS Firebase - Full CRUD</title>
     <style>
         body { font-family: 'Inter', sans-serif; background: #f4f7f6; display: flex; flex-direction: column; align-items: center; padding: 20px; }
         .container { width: 100%; max-width: 500px; background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); }
         input { width: 100%; padding: 12px; margin: 8px 0; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; }
         button#mainBtn { background: #007bff; color: white; border: none; padding: 12px; border-radius: 6px; width: 100%; font-weight: 600; cursor: pointer; }
+        
         .post { background: #fff; border: 1px solid #eaeaea; padding: 15px; margin-top: 15px; border-radius: 8px; width: 100%; max-width: 500px; position: relative; padding-bottom: 50px; }
         .time { font-size: 11px; color: #999; float: right; }
-        .edit-info { font-size: 10px; color: #007bff; display: block; margin-bottom: 5px; font-style: italic; }
-        .controls { position: absolute; bottom: 12px; right: 15px; display: flex; gap: 10px; }
-        .btn-act { background: none; border: none; cursor: pointer; font-size: 12px; }
+        .edit-info { font-size: 10px; color: #007bff; display: block; margin: 4px 0; font-style: italic; }
+
+        /* Блок кнопок внизу справа */
+        .post-actions { position: absolute; bottom: 12px; right: 15px; display: flex; gap: 12px; }
+        .action-link { background: none; border: none; cursor: pointer; font-size: 12px; font-weight: 600; padding: 0; }
+        .link-edit { color: #007bff; }
+        .link-delete { color: #ff4d4d; }
+        .like-btn { cursor: pointer; border: none; background: #f8f9fa; padding: 5px 12px; border-radius: 20px; font-size: 14px; }
     </style>
 </head>
 <body>
 
     <div class="container">
-        <h3>Панель управления</h3>
+        <h3>Управление записями</h3>
         <input type="text" id="name" placeholder="Имя профиля">
         <input type="email" id="email" placeholder="Рабочий Email">
-        <button id="mainBtn">Опубликовать</button>
+        <button id="mainBtn">Опубликовать в облако</button>
     </div>
 
     <div id="feed" style="width: 100%; max-width: 500px;"></div>
@@ -41,61 +47,75 @@
             messagingSenderId: "176104150786",
             appId: "1:176104150786:web:2d8044114a4fd4a9c0141b"
         };
+
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
 
-        // ФУНКЦИЯ: УДАЛЕНИЕ
+        // --- 1. ФУНКЦИЯ: УДАЛЕНИЕ ---
         window.deletePost = async (id) => {
-            if (confirm("Удалить из базы навсегда?")) {
+            if (confirm("Удалить эту запись навсегда?")) {
                 try {
                     await deleteDoc(doc(db, "requests", id));
-                } catch (e) { alert("Ошибка: Проверьте Rules в Firebase!"); }
+                } catch (e) { alert("Ошибка доступа! Проверьте Rules."); }
             }
         };
 
-        // ФУНКЦИЯ: РЕДАКТИРОВАНИЕ
-        window.editPost = async (id, oldName) => {
-            const newName = prompt("Новое имя:", oldName);
-            if (newName && newName !== oldName) {
-                await updateDoc(doc(db, "requests", id), { 
-                    name: newName,
-                    lastUpdate: `Изменен на "${newName}"`,
-                    editedAt: serverTimestamp()
-                });
+        // --- 2. ФУНКЦИЯ: ИЗМЕНЕНИЕ ---
+        window.editPost = async (id, currentName) => {
+            const newName = prompt("Введите новое имя профиля:", currentName);
+            if (newName && newName !== currentName) {
+                try {
+                    await updateDoc(doc(db, "requests", id), { 
+                        name: newName,
+                        lastUpdate: `Редактировано: ${newName}`,
+                        editedAt: serverTimestamp()
+                    });
+                } catch (e) { alert("Ошибка при сохранении изменений."); }
             }
         };
 
-        // ФУНКЦИЯ: ЛАЙК
+        // --- 3. ФУНКЦИЯ: ЛАЙК ---
         window.processLike = (id) => updateDoc(doc(db, "requests", id), { likes: increment(1) });
 
-        // ДОБАВЛЕНИЕ
+        // --- 4. ФУНКЦИЯ: ДОБАВЛЕНИЕ ---
         document.getElementById('mainBtn').onclick = async () => {
             const n = document.getElementById('name').value;
             const e = document.getElementById('email').value;
-            if(n && e) {
-                await addDoc(collection(db, "requests"), { name: n, email: e, likes: 0, timestamp: serverTimestamp() });
-                document.getElementById('email').value = "";
-            }
+            if(!n || !e) return alert("Заполните все поля!");
+            
+            await addDoc(collection(db, "requests"), {
+                name: n, email: e, likes: 0, timestamp: serverTimestamp()
+            });
+            document.getElementById('email').value = "";
+            document.getElementById('name').value = "";
         };
 
-        // ОТОБРАЖЕНИЕ
-        onSnapshot(query(collection(db, "requests"), orderBy("timestamp", "desc")), (snap) => {
+        // --- 5. REAL-TIME ЛЕНТА ---
+        const q = query(collection(db, "requests"), orderBy("timestamp", "desc"));
+        onSnapshot(q, (snapshot) => {
             const feed = document.getElementById('feed');
-            feed.innerHTML = "";
-            snap.forEach((doc) => {
-                const d = doc.data();
+            feed.innerHTML = ""; // Полная очистка для корректного порядка
+            
+            snapshot.forEach((doc) => {
+                const data = doc.data();
+                const id = doc.id;
+                const time = data.timestamp?.toDate().toLocaleTimeString() || "...";
+
                 feed.innerHTML += `
-                    <div class="post">
-                        <span class="time">${d.timestamp?.toDate().toLocaleTimeString() || '...'}</span>
-                        <b>${d.name}</b>
-                        ${d.lastUpdate ? `<span class="edit-info">${d.lastUpdate}</span>` : ''}
-                        <p>${d.email}</p>
-                        <button class="btn-act" onclick="processLike('${doc.id}')">👍 ${d.likes || 0}</button>
-                        <div class="controls">
-                            <button class="btn-act" style="color: #007bff" onclick="editPost('${doc.id}', '${d.name}')">Изменить</button>
-                            <button class="btn-act" style="color: #ff4d4d" onclick="deletePost('${doc.id}')">Удалить</button>
+                    <div class="post" id="post-${id}">
+                        <span class="time">${time}</span>
+                        <b>${data.name}</b>
+                        ${data.lastUpdate ? `<span class="edit-info">${data.lastUpdate}</span>` : ''}
+                        <p style="margin: 8px 0;">${data.email}</p>
+                        
+                        <button class="like-btn" onclick="processLike('${id}')">👍 ${data.likes || 0}</button>
+                        
+                        <div class="post-actions">
+                            <button class="action-link link-edit" onclick="editPost('${id}', '${data.name}')">Изменить</button>
+                            <button class="action-link link-delete" onclick="deletePost('${id}')">Удалить</button>
                         </div>
-                    </div>`;
+                    </div>
+                `;
             });
         });
     </script>
