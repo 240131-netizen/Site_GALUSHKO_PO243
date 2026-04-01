@@ -86,28 +86,29 @@
 
         // --- ДОБАВЛЕНИЕ (Сохраняем текст + URL картинки) ---
         document.getElementById('mainBtn').onclick = async () => {
-            const text = document.getElementById('content').value;
-            const link = document.getElementById('imgUrl').value; // Берем ссылку
+    const text = document.getElementById('content').value;
+    const link = document.getElementById('imgUrl').value;
 
-            if(!text) return alert("Введите текст сообщения!");
-            
-            try {
-                await addDoc(collection(db, "requests"), {
-                    name: auth.currentUser.displayName,
-                    photo: auth.currentUser.photoURL,
-                    text: text,
-                    externalImg: link, // Сохраняем ссылку в базу
-                    likes: 0,
-                    timestamp: serverTimestamp()
-                });
-                
-                // Очистка полей
-                document.getElementById('content').value = "";
-                document.getElementById('imgUrl').value = "";
-            } catch (e) {
-                alert("Ошибка! Проверьте консоль.");
-            }
-        };
+    if(!text) return alert("Введите текст сообщения!");
+    
+    try {
+        await addDoc(collection(db, "requests"), {
+            name: auth.currentUser.displayName,
+            email: auth.currentUser.email, // ВАЖНО: это поле нужно для твоих Rules
+            photo: auth.currentUser.photoURL,
+            text: text,
+            externalImg: link, // Ссылка на картинку
+            likes: 0,
+            timestamp: serverTimestamp()
+        });
+        
+        document.getElementById('content').value = "";
+        document.getElementById('imgUrl').value = "";
+    } catch (e) {
+        console.error(e); // Посмотри сюда в консоли F12, если ошибка останется
+        alert("Ошибка! Проверьте консоль.");
+    }
+};
 
         // --- ЛЕНТА (Отображаем картинку, если ссылка есть) ---
         const q = query(collection(db, "requests"), orderBy("timestamp", "desc"));
