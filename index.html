@@ -159,83 +159,54 @@
             });
         }
 
-        function openChat(user) {
+       function openChat(user) {
     selectedUser = user;
-    document.getElementById('activeChat').style.display = 'block';
+    const activeChatDiv = document.getElementById('activeChat');
     const chatBox = document.getElementById('chatMessages');
+    
+    activeChatDiv.style.display = 'block';
     chatBox.innerHTML = "Загрузка чата...";
 
-    if (dmUnsubscribe) dmUnsubscribe();
+    // Отписываемся от предыдущего чата, если он был открыт
+    if (dmUnsubscribe) {
+        dmUnsubscribe();
+    }
 
-    // Запрос 1: Сообщения от МЕНЯ к НЕМУ
-    const qSent = query(
-        collection(db, "direct_messages"),
-        where("senderId", "==", auth.currentUser.uid),
-        where("receiverId", "==", user.uid)
-    );
-
-    // Запрос 2: Сообщения от НЕГО ко МНЕ
-    const qReceived = query(
-        collection(db, "direct_messages"),
-        where("senderId", "==", user.uid),
-        where("receiverId", "==", auth.currentUser.uid)
-    );
-
-    const renderMessages = () => {
-        // Мы будем хранить сообщения в объекте, чтобы избежать дублей
-        let allMsgs = [];
-
-        // Функция получения данных
-        const getMsgs = (q) => {
-            return new Promise((resolve) => {
-                onSnapshot(q, (snap) => {
-                    const msgs = [];
-                    snap.forEach(doc => msgs.push({ id: doc.id, ...doc.data() }));
-                    resolve(msgs);
-                });
-            });
-        };
-
-        // Слушаем оба направления одновременно
-        const unsub1 = onSnapshot(qSent, updateUI);
-        const unsub2 = onSnapshot(qReceived, updateUI);
-        
-        dmUnsubscribe = () => { unsub1(); unsub2(); };
-
-        function updateUI() {
-            // Чтобы не усложнять, просто берем текущие снимки и объединяем
-            // В реальном времени onSnapshot будет срабатывать при каждом новом сообщении
-            chatBox.innerHTML = `<b>Чат с ${user.name}</b>`;
-            
-            // Собираем сообщения из обоих запросов вручную (временное решение для простоты)
-            // Но лучше использовать один общий запрос без where, если правил достаточно
-        }
-    };
-
-    // УПРОЩЕННЫЙ ВАРИАНТ (если первый не пошел):
-    // Просто слушаем ВСЮ коллекцию и фильтруем ВНУТРИ. 
-    // Если Правила безопасности (п.1) настроены верно, Firebase отдаст только ВАШИ сообщения.
-    
+    // Используем максимально надежный запрос (слушаем всю коллекцию)
+    // Firestore сам отфильтрует данные согласно твоим Rules
     const qAll = query(collection(db, "direct_messages"), orderBy("timestamp", "asc"));
-    
+
     dmUnsubscribe = onSnapshot(qAll, (snap) => {
-        chatBox.innerHTML = `<b>Чат с ${user.name}</b>`;
+        chatBox.innerHTML = `<div style="text-align:center; color:gray; font-size:12px; margin-bottom:10px;">Чат с ${user.name}</div>`;
+        
+        let hasMessages = false;
+
         snap.forEach(mDoc => {
             const m = mDoc.data();
-            const isMe = m.senderId === auth.currentUser.uid && m.receiverId === user.uid;
-            const isHe = m.senderId === user.uid && m.receiverId === auth.currentUser.uid;
             
-            if (isMe || isHe) {
+            // Фильтруем: только сообщения между МНОЙ и ВЫБРАННЫМ собеседником
+            const isMeToHim = m.senderId === auth.currentUser.uid && m.receiverId === user.uid;
+            const isHimToMe = m.senderId === user.uid && m.receiverId === auth.currentUser.uid;
+
+            if (isMeToHim || isHimToMe) {
+                hasMessages = true;
                 const div = document.createElement('div');
+                // Если отправил я — синий пузырь (sent), если он — серый (received)
                 div.className = `msg ${m.senderId === auth.currentUser.uid ? 'sent' : 'received'}`;
                 div.innerText = m.text;
                 chatBox.appendChild(div);
             }
         });
+
+        if (!hasMessages) {
+            chatBox.innerHTML += `<div style="text-align:center; color:#ccc; margin-top:20px;">Сообщений пока нет. Напишите первым!</div>`;
+        }
+
+        // Автопрокрутка вниз
         chatBox.scrollTop = chatBox.scrollHeight;
     }, (error) => {
-        console.error("Ошибка прав:", error);
-        chatBox.innerHTML = "<span style='color:red'>Ошибка доступа. Проверьте Rules в Firebase!</span>";
+        console.error("Ошибка Firebase:", error);
+        chatBox.innerHTML = "<span style='color:red'>Ошибка доступа. Проверьте Rules в консоли Firebase!</span>";
     });
 }
 
