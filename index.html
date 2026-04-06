@@ -162,34 +162,80 @@
         function openChat(user) {
     selectedUser = user;
     document.getElementById('activeChat').style.display = 'block';
-    if(dmUnsubscribe) dmUnsubscribe();
+    const chatBox = document.getElementById('chatMessages');
+    chatBox.innerHTML = "Загрузка чата...";
 
-    // Слушаем ВСЕ сообщения в коллекции (правила сами отфильтруют чужие)
-    const q = query(collection(db, "direct_messages"), orderBy("timestamp", "asc"));
-    
-    dmUnsubscribe = onSnapshot(q, (snap) => {
-        const chatBox = document.getElementById('chatMessages');
-        chatBox.innerHTML = `<div style="text-align:center; color:gray; font-size:12px; margin-bottom:10px;">Чат с ${user.name}</div>`;
+    if (dmUnsubscribe) dmUnsubscribe();
+
+    // Запрос 1: Сообщения от МЕНЯ к НЕМУ
+    const qSent = query(
+        collection(db, "direct_messages"),
+        where("senderId", "==", auth.currentUser.uid),
+        where("receiverId", "==", user.uid)
+    );
+
+    // Запрос 2: Сообщения от НЕГО ко МНЕ
+    const qReceived = query(
+        collection(db, "direct_messages"),
+        where("senderId", "==", user.uid),
+        where("receiverId", "==", auth.currentUser.uid)
+    );
+
+    const renderMessages = () => {
+        // Мы будем хранить сообщения в объекте, чтобы избежать дублей
+        let allMsgs = [];
+
+        // Функция получения данных
+        const getMsgs = (q) => {
+            return new Promise((resolve) => {
+                onSnapshot(q, (snap) => {
+                    const msgs = [];
+                    snap.forEach(doc => msgs.push({ id: doc.id, ...doc.data() }));
+                    resolve(msgs);
+                });
+            });
+        };
+
+        // Слушаем оба направления одновременно
+        const unsub1 = onSnapshot(qSent, updateUI);
+        const unsub2 = onSnapshot(qReceived, updateUI);
         
+        dmUnsubscribe = () => { unsub1(); unsub2(); };
+
+        function updateUI() {
+            // Чтобы не усложнять, просто берем текущие снимки и объединяем
+            // В реальном времени onSnapshot будет срабатывать при каждом новом сообщении
+            chatBox.innerHTML = `<b>Чат с ${user.name}</b>`;
+            
+            // Собираем сообщения из обоих запросов вручную (временное решение для простоты)
+            // Но лучше использовать один общий запрос без where, если правил достаточно
+        }
+    };
+
+    // УПРОЩЕННЫЙ ВАРИАНТ (если первый не пошел):
+    // Просто слушаем ВСЮ коллекцию и фильтруем ВНУТРИ. 
+    // Если Правила безопасности (п.1) настроены верно, Firebase отдаст только ВАШИ сообщения.
+    
+    const qAll = query(collection(db, "direct_messages"), orderBy("timestamp", "asc"));
+    
+    dmUnsubscribe = onSnapshot(qAll, (snap) => {
+        chatBox.innerHTML = `<b>Чат с ${user.name}</b>`;
         snap.forEach(mDoc => {
             const m = mDoc.data();
+            const isMe = m.senderId === auth.currentUser.uid && m.receiverId === user.uid;
+            const isHe = m.senderId === user.uid && m.receiverId === auth.currentUser.uid;
             
-            // Проверяем: это сообщение относится именно к ЭТОМУ диалогу?
-            const isSentByMeToHim = (m.senderId === auth.currentUser.uid && m.receiverId === user.uid);
-            const isSentByHimToMe = (m.senderId === user.uid && m.receiverId === auth.currentUser.uid);
-            
-            if (isSentByMeToHim || isSentByHimToMe) {
+            if (isMe || isHe) {
                 const div = document.createElement('div');
-                // Если отправил я — синий пузырь справа, если он — серый слева
                 div.className = `msg ${m.senderId === auth.currentUser.uid ? 'sent' : 'received'}`;
                 div.innerText = m.text;
                 chatBox.appendChild(div);
             }
         });
-        // Автопрокрутка вниз
         chatBox.scrollTop = chatBox.scrollHeight;
     }, (error) => {
-        console.error("Ошибка доступа к чату: ", error);
+        console.error("Ошибка прав:", error);
+        chatBox.innerHTML = "<span style='color:red'>Ошибка доступа. Проверьте Rules в Firebase!</span>";
     });
 }
 
