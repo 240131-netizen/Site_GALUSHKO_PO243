@@ -160,31 +160,38 @@
         }
 
         function openChat(user) {
-            selectedUser = user;
-            document.getElementById('activeChat').style.display = 'block';
-            if(dmUnsubscribe) dmUnsubscribe();
+    selectedUser = user;
+    document.getElementById('activeChat').style.display = 'block';
+    if(dmUnsubscribe) dmUnsubscribe();
 
-            const q = query(collection(db, "direct_messages"), orderBy("timestamp", "asc"));
+    // Слушаем ВСЕ сообщения в коллекции (правила сами отфильтруют чужие)
+    const q = query(collection(db, "direct_messages"), orderBy("timestamp", "asc"));
+    
+    dmUnsubscribe = onSnapshot(q, (snap) => {
+        const chatBox = document.getElementById('chatMessages');
+        chatBox.innerHTML = `<div style="text-align:center; color:gray; font-size:12px; margin-bottom:10px;">Чат с ${user.name}</div>`;
+        
+        snap.forEach(mDoc => {
+            const m = mDoc.data();
             
-            dmUnsubscribe = onSnapshot(q, (snap) => {
-                const chatBox = document.getElementById('chatMessages');
-                chatBox.innerHTML = `<b>Чат с ${user.name}</b>`;
-                snap.forEach(mDoc => {
-                    const m = mDoc.data();
-                    // Фильтруем сообщения: либо я отправил ему, либо он мне
-                    const isMine = m.senderId === auth.currentUser.uid && m.receiverId === user.uid;
-                    const isTheirs = m.senderId === user.uid && m.receiverId === auth.currentUser.uid;
-                    
-                    if(isMine || isTheirs) {
-                        const div = document.createElement('div');
-                        div.className = `msg ${isMine ? 'sent' : 'received'}`;
-                        div.innerText = m.text;
-                        chatBox.appendChild(div);
-                    }
-                });
-                chatBox.scrollTop = chatBox.scrollHeight;
-            });
-        }
+            // Проверяем: это сообщение относится именно к ЭТОМУ диалогу?
+            const isSentByMeToHim = (m.senderId === auth.currentUser.uid && m.receiverId === user.uid);
+            const isSentByHimToMe = (m.senderId === user.uid && m.receiverId === auth.currentUser.uid);
+            
+            if (isSentByMeToHim || isSentByHimToMe) {
+                const div = document.createElement('div');
+                // Если отправил я — синий пузырь справа, если он — серый слева
+                div.className = `msg ${m.senderId === auth.currentUser.uid ? 'sent' : 'received'}`;
+                div.innerText = m.text;
+                chatBox.appendChild(div);
+            }
+        });
+        // Автопрокрутка вниз
+        chatBox.scrollTop = chatBox.scrollHeight;
+    }, (error) => {
+        console.error("Ошибка доступа к чату: ", error);
+    });
+}
 
         document.getElementById('sendDmBtn').onclick = async () => {
             const input = document.getElementById('dmInput');
